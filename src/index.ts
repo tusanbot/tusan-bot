@@ -90,7 +90,7 @@ function contentFrom(event: SupabaseEvent, siteUrl: string): Content | null {
   return null;
 }
 
-async function sendTelegram(env: Env, item: Content): Promise<void> {
+async function sendTelegram(env: Env, item: Content): Promise<number> {
   const body = [
     `<b>${escapeHtml(item.kind, 80)} | ${escapeHtml(item.title, 300)}</b>`,
     escapeHtml(item.summary, 2800),
@@ -120,6 +120,36 @@ async function sendTelegram(env: Env, item: Content): Promise<void> {
   if (!result.ok) throw new Error(result.description || "Telegram sendMessage failed");
 }
 
+async function expireRegistration(env: Env, eventKey: string): Promise<boolean> {
+  const saved = await env.DB.prepare(
+    "SELECT telegram_message_id, last_error FROM published_events WHERE event_key = ? AND state = 'sent'"
+  ).bind(eventKey).first<{ telegram_message_id: number | null; last_error: string | null }>();
+
+  if (!saved?.telegram_message_id) return false;
+  if (saved.last_error === "expired") return true;
+
+  const response = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/editMessageText`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      chat_id: env.TELEGRAM_CHANNEL_ID,
+      message_id: saved.telegram_message_id,
+      text: "⛔️ <b>این ثبت‌نام دیگر فعال نیست.</b>\n\nمهلت ثبت‌نام به پایان رسیده یا اطلاعیه از سایت حذف شده است.",
+      parse_mode: "HTML",
+      reply_markup: { inline_keyboard: [] },
+    }),
+  });
+
+  if (!response.ok) throw new Error(`Telegram HTTP ${response.status}: ${(await response.text()).slice(0, 300)}`);
+  const result = await response.json() as { ok?: boolean; description?: string };
+  if (!result.ok) throw new Error(result.description || "Telegram editMessageText failed");
+
+  await env.DB.prepare(
+    "UPDATE published_events SET last_error = 'expired' WHERE event_key = ?"
+  ).bind(eventKey).run();
+  return true;
+}
+
 async function handleWebhook(request: Request, env: Env): Promise<Response> {
   const provided = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
     request.headers.get("x-webhook-secret") || "";
@@ -132,6 +162,16 @@ async function handleWebhook(request: Request, env: Env): Promise<Response> {
     event = await request.json() as SupabaseEvent;
   } catch {
     return new Response("Invalid JSON", { status: 400 });
+  }
+
+  if (event.schema === "public" && event.table === "services_announcements" &&
+      (event.type === "DELETE" ||
+       (event.type === "UPDATE" && event.record &&
+        (event.record.is_active !== true || text(event.record.type) !== "registration")))) {
+    const id = text(event.record?.id) || text(event.old_record?.id);
+    if (!id) return Response.json({ ok: true, skipped: true, reason: "missing_registration_id" });
+    const expired = await expireRegistration(env, `services_announcements:${id}`);
+    return Response.json({ ok: true, expired });
   }
 
   const item = contentFrom(event, (env.SITE_URL || "https://tusancn.ir").replace(/\/$/, ""));
@@ -148,10 +188,10 @@ async function handleWebhook(request: Request, env: Env): Promise<Response> {
   }
 
   try {
-    await sendTelegram(env, item);
+    const messageId = await sendTelegram(env, item);
     await env.DB.prepare(
-      "UPDATE published_events SET state = 'sent', sent_at = datetime('now'), last_error = NULL WHERE event_key = ?"
-    ).bind(item.key).run();
+      "UPDATE published_events SET state = 'sent', sent_at = datetime('now'), telegram_message_id = ?, last_error = NULL WHERE event_key = ?"
+    ).bind(messageId, item.key).run();
     return Response.json({ ok: true, sent: true });
   } catch (error) {
     await env.DB.prepare(
