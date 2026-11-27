@@ -1,10 +1,10 @@
-name = "tosan-telegram-publisher"
+name = "tusan-bot"
 main = "src/index.ts"
 compatibility_date = "2026-11-27"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "tosan-telegram-publisher"
+database_name = "REPLACE_WITH_YOUR_D1_DATABASE_NAME"
 database_id = "REPLACE_WITH_D1_DATABASE_ID"
 migrations_dir = "migrations"
 
