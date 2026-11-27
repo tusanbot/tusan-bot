@@ -4,9 +4,10 @@ compatibility_date = "2026-11-27"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "REPLACE_WITH_YOUR_D1_DATABASE_NAME"
+database_name = "tusanbot"
 database_id = "d62cea2f-ae5f-402c-b80a-923204096a3b"
 migrations_dir = "migrations"
 
 [vars]
 SITE_URL = "https://tusancn.ir"
+TELEGRAM_CHANNEL_ID = "-1002951923149"
