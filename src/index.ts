@@ -116,8 +116,10 @@ async function sendTelegram(env: Env, item: Content): Promise<number> {
     body: JSON.stringify(payload),
   });
   if (!response.ok) throw new Error(`Telegram HTTP ${response.status}: ${(await response.text()).slice(0, 300)}`);
-  const result = await response.json() as { ok?: boolean; description?: string };
+  const result = await response.json() as { ok?: boolean; description?: string; result?: { message_id?: number } };
   if (!result.ok) throw new Error(result.description || "Telegram sendMessage failed");
+  if (typeof result.result?.message_id !== "number") throw new Error("Telegram response did not include message_id");
+  return result.result.message_id;
 }
 
 async function expireRegistration(env: Env, eventKey: string): Promise<boolean> {
