@@ -44,13 +44,19 @@ function text(value: unknown): string {
 }
 
 function contentFrom(event: SupabaseEvent, siteUrl: string): Content | null {
-  if (event.type !== "INSERT" || event.schema !== "public" || !event.record) return null;
+  if (!["INSERT", "UPDATE"].includes(event.type || "") || event.schema !== "public" || !event.record) return null;
   const row = event.record;
+  const old = event.old_record || {};
   const id = text(row.id);
   if (!id) return null;
 
+  // Publish on INSERT when already published, or only on the transition to published.
+  const becamePublished = event.type === "INSERT"
+    ? text(row.status) === "published"
+    : text(old.status) !== "published" && text(row.status) === "published";
+
   if (event.table === "news_announcements") {
-    if (text(row.status) !== "published") return null;
+    if (!becamePublished) return null;
     const slug = text(row.slug);
     if (!slug) return null;
     return {
@@ -63,7 +69,7 @@ function contentFrom(event: SupabaseEvent, siteUrl: string): Content | null {
   }
 
   if (event.table === "blog_posts") {
-    if (text(row.status) !== "published") return null;
+    if (!becamePublished) return null;
     const slug = text(row.slug);
     if (!slug) return null;
     return {
@@ -90,6 +96,18 @@ function contentFrom(event: SupabaseEvent, siteUrl: string): Content | null {
   return null;
 }
 
+async function telegramCall(env: Env, method: string, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const response = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw new Error(`Telegram HTTP ${response.status}: ${(await response.text()).slice(0, 300)}`);
+  const result = await response.json() as { ok?: boolean; description?: string; result?: unknown };
+  if (!result.ok) throw new Error(result.description || `Telegram ${method} failed`);
+  return (result.result && typeof result.result === "object" ? result.result : {}) as Record<string, unknown>;
+}
+
 async function sendTelegram(env: Env, item: Content): Promise<number> {
   const body = [
     `<b>${escapeHtml(item.kind, 80)} | ${escapeHtml(item.title, 300)}</b>`,
@@ -97,7 +115,7 @@ async function sendTelegram(env: Env, item: Content): Promise<number> {
     item.registration ? "برای مشاهده جزئیات و ثبت درخواست از دکمه زیر استفاده کنید." : "",
   ].filter(Boolean).join("\n\n");
 
-  const payload: Record<string, unknown> = {
+  const result = await telegramCall(env, "sendMessage", {
     chat_id: env.TELEGRAM_CHANNEL_ID,
     text: body,
     parse_mode: "HTML",
@@ -108,18 +126,33 @@ async function sendTelegram(env: Env, item: Content): Promise<number> {
         url: item.url,
       }]],
     },
-  };
-
-  const response = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
   });
-  if (!response.ok) throw new Error(`Telegram HTTP ${response.status}: ${(await response.text()).slice(0, 300)}`);
-  const result = await response.json() as { ok?: boolean; description?: string; result?: { message_id?: number } };
-  if (!result.ok) throw new Error(result.description || "Telegram sendMessage failed");
-  if (typeof result.result?.message_id !== "number") throw new Error("Telegram response did not include message_id");
-  return result.result.message_id;
+  if (typeof result.message_id !== "number") throw new Error("Telegram response did not include message_id");
+  return result.message_id;
+}
+
+async function pinLatestRegistration(env: Env, eventKey: string, messageId: number): Promise<void> {
+  // Pin the new message first so a failure cannot leave the channel without a pinned registration.
+  await telegramCall(env, "pinChatMessage", {
+    chat_id: env.TELEGRAM_CHANNEL_ID,
+    message_id: messageId,
+    disable_notification: true,
+  });
+
+  const previous = await env.DB.prepare(
+    "SELECT telegram_message_id FROM published_events WHERE state = 'sent' AND event_key LIKE 'services_announcements:%' AND event_key != ? AND telegram_message_id IS NOT NULL"
+  ).bind(eventKey).all<{ telegram_message_id: number }>();
+
+  for (const row of previous.results || []) {
+    try {
+      await telegramCall(env, "unpinChatMessage", {
+        chat_id: env.TELEGRAM_CHANNEL_ID,
+        message_id: row.telegram_message_id,
+      });
+    } catch {
+      // Best effort: an already removed or manually unpinned message must not block publication.
+    }
+  }
 }
 
 async function expireRegistration(env: Env, eventKey: string): Promise<boolean> {
@@ -130,25 +163,26 @@ async function expireRegistration(env: Env, eventKey: string): Promise<boolean> 
   if (!saved?.telegram_message_id) return false;
   if (saved.last_error === "expired") return true;
 
-  const response = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/editMessageText`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      chat_id: env.TELEGRAM_CHANNEL_ID,
-      message_id: saved.telegram_message_id,
-      text: "⛔️ <b>این ثبت‌نام دیگر فعال نیست.</b>\n\nمهلت ثبت‌نام به پایان رسیده یا اطلاعیه از سایت حذف شده است.",
-      parse_mode: "HTML",
-      reply_markup: { inline_keyboard: [] },
-    }),
+  await telegramCall(env, "editMessageText", {
+    chat_id: env.TELEGRAM_CHANNEL_ID,
+    message_id: saved.telegram_message_id,
+    text: "⛔️ <b>این ثبت‌نام دیگر فعال نیست.</b>\n\nمهلت ثبت‌نام به پایان رسیده یا اطلاعیه از سایت حذف شده است.",
+    parse_mode: "HTML",
+    reply_markup: { inline_keyboard: [] },
   });
-
-  if (!response.ok) throw new Error(`Telegram HTTP ${response.status}: ${(await response.text()).slice(0, 300)}`);
-  const result = await response.json() as { ok?: boolean; description?: string };
-  if (!result.ok) throw new Error(result.description || "Telegram editMessageText failed");
 
   await env.DB.prepare(
     "UPDATE published_events SET last_error = 'expired' WHERE event_key = ?"
   ).bind(eventKey).run();
+
+  try {
+    await telegramCall(env, "unpinChatMessage", {
+      chat_id: env.TELEGRAM_CHANNEL_ID,
+      message_id: saved.telegram_message_id,
+    });
+  } catch {
+    // It may already have been unpinned or replaced by a newer active registration.
+  }
   return true;
 }
 
@@ -194,7 +228,17 @@ async function handleWebhook(request: Request, env: Env): Promise<Response> {
     await env.DB.prepare(
       "UPDATE published_events SET state = 'sent', sent_at = datetime('now'), telegram_message_id = ?, last_error = NULL WHERE event_key = ?"
     ).bind(messageId, item.key).run();
-    return Response.json({ ok: true, sent: true });
+
+    let pinned = false;
+    if (item.registration) {
+      try {
+        await pinLatestRegistration(env, item.key, messageId);
+        pinned = true;
+      } catch {
+        // Publication succeeded; pin permission/configuration must not cause a duplicate retry.
+      }
+    }
+    return Response.json({ ok: true, sent: true, pinned });
   } catch (error) {
     await env.DB.prepare(
       "UPDATE published_events SET state = 'failed', last_error = ? WHERE event_key = ?"
