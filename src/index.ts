@@ -23,8 +23,6 @@ type Content = {
   registration?: boolean;
 };
 
-const encoder = new TextEncoder();
-
 function escapeHtml(value: unknown): string {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -72,11 +70,10 @@ function contentFrom(event: SupabaseEvent, siteUrl: string): Content | null {
   if (event.table === "services_announcements") {
     if (text(row.type) !== "registration" || row.is_active !== true) return null;
     const endAt = text(row.extended_end_at) || text(row.end_at);
-    const deadline = endAt ? `\nمهلت ثبت‌نام: ${escapeHtml(endAt.slice(0, 10))}` : "";
     return {
       key: `services_announcements:${id}`,
       title: text(row.title) || "ثبت‌نام فعال",
-      summary: text(row.summary) || text(row.content),
+      summary: [text(row.summary) || text(row.content), endAt ? `مهلت ثبت‌نام: ${endAt.slice(0, 10)}` : ""].filter(Boolean).join("\\n"),
       url: `${siteUrl}/services`,
       kind: "اطلاعیه",
       registration: true,
