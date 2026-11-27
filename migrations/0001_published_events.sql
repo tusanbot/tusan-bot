@@ -3,7 +3,6 @@ CREATE TABLE IF NOT EXISTS published_events (
   state TEXT NOT NULL CHECK (state IN ('processing', 'sent', 'failed')),
   created_at TEXT NOT NULL,
   sent_at TEXT,
-  telegram_message_id INTEGER,
   last_error TEXT
 );
 
