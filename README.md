@@ -12,9 +12,9 @@
 
 ## راه‌اندازی
 
-1. یک D1 database بسازید و مقدار `database_id` در `wrangler.toml` را جایگزین کنید.
+1. برای دیتابیس D1 موجود، `database_id` و `database_name` را در `wrangler.toml` با مقادیر واقعی جایگزین کنید؛ Binding باید دقیقاً `DB` باشد. نام Worker در فایل `tusan-bot` است.
 2. `npx wrangler d1 migrations apply tusan-bot --remote` را اجرا کنید.
-3. Secrets را تنظیم کنید: `BOT_TOKEN`, `TELEGRAM_CHANNEL_ID`, `SUPABASE_WEBHOOK_SECRET`.
+3. Secrets را تنظیم کنید: `BOT_TOKEN`, `TELEGRAM_CHANNEL_ID`, `SUPABASE_WEBHOOK_SECRET`. نام `BOT_TOKEN` همان متغیری است که Worker فعلی شما دارد.
 4. Worker را deploy کنید.
 5. در Supabase برای هر سه جدول یک Database Webhook از نوع INSERT بسازید و به `/webhooks/supabase` بفرستید؛ هدر `Authorization: Bearer <secret>` را تنظیم کنید.
 6. بات باید در کانال ادمین و مجاز به ارسال پیام باشد.
