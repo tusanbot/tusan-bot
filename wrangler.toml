@@ -13,6 +13,9 @@ migrations_dir = "migrations"
 binding = "DB"
 database_id = "db514ffd-c281-4ae5-9aa8-b519934bdc4c"
 
+[triggers]
+crons = ["*/15 * * * *"]
+
 [vars]
 SITE_URL = "https://tusancn.ir"
 TELEGRAM_CHANNEL_ID = "-1002951923149"
