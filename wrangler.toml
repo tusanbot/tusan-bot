@@ -8,6 +8,10 @@ database_name = "tusanbot"
 database_id = "d62cea2f-ae5f-402c-b80a-923204096a3b"
 migrations_dir = "migrations"
 
+[[previews.d1_databases]]
+binding = "DB"
+database_id = "db514ffd-c281-4ae5-9aa8-b519934bdc4c"
+
 [vars]
 SITE_URL = "https://tusancn.ir"
 TELEGRAM_CHANNEL_ID = "-1002951923149"
