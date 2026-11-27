@@ -21,6 +21,7 @@ type Content = {
   url: string;
   kind: "خبر" | "مقاله" | "اطلاعیه";
   registration?: boolean;
+  expiresAt?: string;
 };
 
 function escapeHtml(value: unknown, maxLength = Number.POSITIVE_INFINITY): string {
@@ -91,6 +92,7 @@ function contentFrom(event: SupabaseEvent, siteUrl: string): Content | null {
       url: `${siteUrl}/services`,
       kind: "اطلاعیه",
       registration: true,
+      expiresAt: endAt || undefined,
     };
   }
   return null;
@@ -172,7 +174,7 @@ async function expireRegistration(env: Env, eventKey: string): Promise<boolean> 
   });
 
   await env.DB.prepare(
-    "UPDATE published_events SET last_error = 'expired' WHERE event_key = ?"
+    "UPDATE published_events SET last_error = 'expired', expires_at = NULL WHERE event_key = ?"
   ).bind(eventKey).run();
 
   try {
@@ -226,8 +228,8 @@ async function handleWebhook(request: Request, env: Env): Promise<Response> {
   try {
     const messageId = await sendTelegram(env, item);
     await env.DB.prepare(
-      "UPDATE published_events SET state = 'sent', sent_at = datetime('now'), telegram_message_id = ?, last_error = NULL WHERE event_key = ?"
-    ).bind(messageId, item.key).run();
+      "UPDATE published_events SET state = 'sent', sent_at = datetime('now'), telegram_message_id = ?, expires_at = ?, last_error = NULL WHERE event_key = ?"
+    ).bind(messageId, item.expiresAt || null, item.key).run();
 
     let pinned = false;
     if (item.registration) {
@@ -247,7 +249,45 @@ async function handleWebhook(request: Request, env: Env): Promise<Response> {
   }
 }
 
+async function expireDueRegistrations(env: Env): Promise<number> {
+  const due = await env.DB.prepare(
+    "SELECT event_key, telegram_message_id FROM published_events WHERE state = 'sent' AND last_error IS NULL AND expires_at IS NOT NULL AND datetime(expires_at) <= datetime('now')"
+  ).all<{ event_key: string; telegram_message_id: number | null }>();
+
+  let expired = 0;
+  for (const row of due.results || []) {
+    if (!row.telegram_message_id) continue;
+    try {
+      await telegramCall(env, "editMessageText", {
+        chat_id: env.TELEGRAM_CHANNEL_ID,
+        message_id: row.telegram_message_id,
+        text: "⛔️ <b>این ثبت‌نام دیگر فعال نیست.</b>\\n\\nمهلت ثبت‌نام به پایان رسیده است.",
+        parse_mode: "HTML",
+        reply_markup: { inline_keyboard: [] },
+      });
+      await env.DB.prepare(
+        "UPDATE published_events SET last_error = 'expired', expires_at = NULL WHERE event_key = ? AND state = 'sent'"
+      ).bind(row.event_key).run();
+      try {
+        await telegramCall(env, "unpinChatMessage", {
+          chat_id: env.TELEGRAM_CHANNEL_ID,
+          message_id: row.telegram_message_id,
+        });
+      } catch {
+        // Ignore messages that are already unpinned or no longer present.
+      }
+      expired++;
+    } catch {
+      // Leave the row due so the next scheduled run retries it.
+    }
+  }
+  return expired;
+}
+
 export default {
+  async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
+    await expireDueRegistrations(env);
+  },
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/health") {
