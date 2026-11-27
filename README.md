@@ -13,7 +13,7 @@
 ## راه‌اندازی
 
 1. پیکربندی D1 در `wrangler.toml` از قبل با دیتابیس `tusanbot` و شناسهٔ داده‌شده تنظیم شده است؛ Binding باید دقیقاً `DB` باشد. نام Worker برابر `tusan-bot` است.
-2. فایل `migrations/0001_published_events.sql` در شاخهٔ فعلی بررسی شده و جدول `published_events` را می‌سازد. پس از بازبینی نهایی، migration را با `npx wrangler d1 migrations apply tusanbot --remote` روی D1 اعمال کنید؛ این دستور در این مرحله اجرا نشده است.
+2. ابتدا migrationهای `0001_published_events.sql` و `0002_registration_expiry.sql` را به ترتیب با `npx wrangler d1 migrations apply tusanbot --remote` روی D1 اعمال کنید. Migration دوم شناسه پیام تلگرام و زمان انقضا را ذخیره می‌کند؛ بدون آن نسخه جدید کار نمی‌کند.
 3. در تنظیمات Worker مقدار `TELEGRAM_CHANNEL_ID` را روی `-1002951923149` قرار دهید و Secrets را تنظیم کنید: `BOT_TOKEN` و `SUPABASE_WEBHOOK_SECRET`.
 4. Worker را deploy کنید.
 5. در Supabase برای `news_announcements` و `blog_posts` رویداد INSERT و برای `services_announcements` رویدادهای INSERT، UPDATE و DELETE را به `/webhooks/supabase` ارسال کنید؛ هدر `Authorization: Bearer <secret>` را تنظیم کنید.
@@ -22,6 +22,8 @@
 ## نکات
 
 - این پروژه در Supabase هیچ تغییری نمی‌دهد؛ migration فقط جدول deduplication در D1 می‌سازد.
-- برای جلوگیری از ارسال دوباره، کلید `table:id` در D1 ثبت می‌شود؛ شناسه پیام تلگرام نیز ذخیره می‌شود تا هنگام غیرفعال‌شدن یا حذف ثبت‌نام، پیام کانال با برچسب پایان‌یافته و بدون دکمه به‌روزرسانی شود.
+- برای جلوگیری از ارسال دوباره، کلید `table:id` در D1 ثبت می‌شود؛ شناسه پیام تلگرام ذخیره می‌شود تا هنگام غیرفعال‌شدن یا حذف ثبت‌نام، پیام کانال با برچسب پایان‌یافته و بدون دکمه به‌روزرسانی شود.
+- Cron هر ۱۵ دقیقه ثبت‌نام‌هایی را که `extended_end_at` یا `end_at` آن‌ها گذشته است بررسی می‌کند؛ پیام منقضی می‌شود، دکمه حذف و پیام از حالت سنجاق خارج می‌شود.
 - تا زمان تأیید مسیر دقیق فرم درخواست، دکمه ثبت‌نام به صفحه خدمات سایت می‌رود.
+- Worker برای زمان‌بندی انقضا به Cron Trigger با فاصله ۱۵ دقیقه نیاز دارد؛ این مقدار در `wrangler.toml` تعریف شده است.
 - برای فعال‌شدن واقعی، D1، secrets، webhookها و دسترسی کانال باید در محیط استقرار تنظیم شوند.
