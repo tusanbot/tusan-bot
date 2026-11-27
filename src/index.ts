@@ -110,24 +110,30 @@ async function telegramCall(env: Env, method: string, payload: Record<string, un
   return (result.result && typeof result.result === "object" ? result.result : {}) as Record<string, unknown>;
 }
 
-async function sendTelegram(env: Env, item: Content): Promise<number> {
-  const body = [
+function renderContent(item: Content): string {
+  return [
     `<b>${escapeHtml(item.kind, 80)} | ${escapeHtml(item.title, 300)}</b>`,
     escapeHtml(item.summary, 2800),
     item.registration ? "برای مشاهده جزئیات و ثبت درخواست از دکمه زیر استفاده کنید." : "",
   ].filter(Boolean).join("\n\n");
+}
+
+function contentKeyboard(item: Content): Record<string, unknown> {
+  return { inline_keyboard: [[{
+    text: item.registration ? "مشاهده و درخواست" : "ادامه مطلب",
+    url: item.url,
+  }]] };
+}
+
+async function sendTelegram(env: Env, item: Content): Promise<number> {
+  const body = renderContent(item);
 
   const result = await telegramCall(env, "sendMessage", {
     chat_id: env.TELEGRAM_CHANNEL_ID,
     text: body,
     parse_mode: "HTML",
     disable_web_page_preview: false,
-    reply_markup: {
-      inline_keyboard: [[{
-        text: item.registration ? "مشاهده و درخواست" : "ادامه مطلب",
-        url: item.url,
-      }]],
-    },
+    reply_markup: contentKeyboard(item),
   });
   if (typeof result.message_id !== "number") throw new Error("Telegram response did not include message_id");
   return result.message_id;
@@ -214,6 +220,32 @@ async function handleWebhook(request: Request, env: Env): Promise<Response> {
 
   const item = contentFrom(event, (env.SITE_URL || "https://tusancn.ir").replace(/\/$/, ""));
   if (!item) return Response.json({ ok: true, skipped: true });
+
+  // Active registration updates (including deadline extensions) edit the existing channel post.
+  if (event.table === "services_announcements" && event.type === "UPDATE" && item.registration) {
+    const existing = await env.DB.prepare(
+      "SELECT telegram_message_id, state FROM published_events WHERE event_key = ?"
+    ).bind(item.key).first<{ telegram_message_id: number | null; state: string }>();
+    if (existing?.state === "sent" && existing.telegram_message_id) {
+      await telegramCall(env, "editMessageText", {
+        chat_id: env.TELEGRAM_CHANNEL_ID,
+        message_id: existing.telegram_message_id,
+        text: renderContent(item),
+        parse_mode: "HTML",
+        disable_web_page_preview: false,
+        reply_markup: contentKeyboard(item),
+      });
+      await env.DB.prepare(
+        "UPDATE published_events SET expires_at = ?, last_error = NULL WHERE event_key = ?"
+      ).bind(item.expiresAt || null, item.key).run();
+      try {
+        await pinLatestRegistration(env, item.key, existing.telegram_message_id);
+      } catch {
+        // Existing publication remains valid even if pin permissions are unavailable.
+      }
+      return Response.json({ ok: true, updated: true });
+    }
+  }
 
   const claimed = await env.DB.prepare(
     "INSERT OR IGNORE INTO published_events (event_key, state, created_at) VALUES (?, 'processing', datetime('now'))"
