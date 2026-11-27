@@ -1,0 +1,12 @@
+name = "tosan-telegram-publisher"
+main = "src/index.ts"
+compatibility_date = "2026-11-27"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "tosan-telegram-publisher"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+[vars]
+SITE_URL = "https://tusancn.ir"
