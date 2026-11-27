@@ -132,7 +132,12 @@ async function handleWebhook(request: Request, env: Env): Promise<Response> {
   const claimed = await env.DB.prepare(
     "INSERT OR IGNORE INTO published_events (event_key, state, created_at) VALUES (?, 'processing', datetime('now'))"
   ).bind(item.key).run();
-  if (!claimed.meta.changes) return Response.json({ ok: true, duplicate: true });
+  if (!claimed.meta.changes) {
+    const reclaimed = await env.DB.prepare(
+      "UPDATE published_events SET state = 'processing', created_at = datetime('now'), last_error = NULL WHERE event_key = ? AND (state = 'failed' OR (state = 'processing' AND created_at < datetime('now', '-5 minutes')))"
+    ).bind(item.key).run();
+    if (!reclaimed.meta.changes) return Response.json({ ok: true, duplicate: true });
+  }
 
   try {
     await sendTelegram(env, item);
