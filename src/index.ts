@@ -261,7 +261,7 @@ async function expireDueRegistrations(env: Env): Promise<number> {
       await telegramCall(env, "editMessageText", {
         chat_id: env.TELEGRAM_CHANNEL_ID,
         message_id: row.telegram_message_id,
-        text: "⛔️ <b>این ثبت‌نام دیگر فعال نیست.</b>\\n\\nمهلت ثبت‌نام به پایان رسیده است.",
+        text: "⛔️ <b>این ثبت‌نام دیگر فعال نیست.</b>\n\nمهلت ثبت‌نام به پایان رسیده است.",
         parse_mode: "HTML",
         reply_markup: { inline_keyboard: [] },
       });
