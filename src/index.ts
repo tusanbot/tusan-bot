@@ -1,5 +1,5 @@
 export interface Env {
-  TELEGRAM_BOT_TOKEN: string;
+  BOT_TOKEN: string;
   TELEGRAM_CHANNEL_ID: string;
   SUPABASE_WEBHOOK_SECRET: string;
   DB: D1Database;
@@ -73,7 +73,7 @@ function contentFrom(event: SupabaseEvent, siteUrl: string): Content | null {
     return {
       key: `services_announcements:${id}`,
       title: text(row.title) || "ثبت‌نام فعال",
-      summary: [text(row.summary) || text(row.content), endAt ? `مهلت ثبت‌نام: ${endAt.slice(0, 10)}` : ""].filter(Boolean).join("\\n"),
+      summary: [text(row.summary) || text(row.content), endAt ? `مهلت ثبت‌نام: ${endAt.slice(0, 10)}` : ""].filter(Boolean).join("\n"),
       url: `${siteUrl}/services`,
       kind: "اطلاعیه",
       registration: true,
@@ -102,7 +102,7 @@ async function sendTelegram(env: Env, item: Content): Promise<void> {
     },
   };
 
-  const response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+  const response = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
