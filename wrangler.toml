@@ -1,0 +1,21 @@
+name = "tusan-bot"
+main = "src/index.ts"
+compatibility_date = "2026-11-27"
+preview_urls = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "tusanbot"
+database_id = "d62cea2f-ae5f-402c-b80a-923204096a3b"
+migrations_dir = "migrations"
+
+[[previews.d1_databases]]
+binding = "DB"
+database_id = "db514ffd-c281-4ae5-9aa8-b519934bdc4c"
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[vars]
+SITE_URL = "https://tusancn.ir"
+TELEGRAM_CHANNEL_ID = "-1002951923149"
