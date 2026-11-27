@@ -23,12 +23,20 @@ type Content = {
   registration?: boolean;
 };
 
-function escapeHtml(value: unknown): string {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+function escapeHtml(value: unknown, maxLength = Number.POSITIVE_INFINITY): string {
+  const replacements: Record<string, string> = {
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+  };
+  let output = "";
+  for (const character of String(value ?? "")) {
+    const escaped = replacements[character] || character;
+    if (output.length + escaped.length > maxLength) break;
+    output += escaped;
+  }
+  return output;
 }
 
 function text(value: unknown): string {
@@ -84,8 +92,8 @@ function contentFrom(event: SupabaseEvent, siteUrl: string): Content | null {
 
 async function sendTelegram(env: Env, item: Content): Promise<void> {
   const body = [
-    `<b>${escapeHtml(item.kind)} | ${escapeHtml(item.title)}</b>`,
-    escapeHtml(item.summary).slice(0, 3000),
+    `<b>${escapeHtml(item.kind, 80)} | ${escapeHtml(item.title, 300)}</b>`,
+    escapeHtml(item.summary, 2800),
     item.registration ? "برای مشاهده جزئیات و ثبت درخواست از دکمه زیر استفاده کنید." : "",
   ].filter(Boolean).join("\n\n");
 
