@@ -13,7 +13,7 @@
 ## راه‌اندازی
 
 1. پیکربندی D1 در `wrangler.toml` از قبل با دیتابیس `tusanbot` و شناسهٔ داده‌شده تنظیم شده است؛ Binding باید دقیقاً `DB` باشد. نام Worker برابر `tusan-bot` است.
-2. پس از تأیید وجود فایل‌های migration در مخزن، آن‌ها را با `npx wrangler d1 migrations apply tusanbot --remote` روی دیتابیس اعمال کنید.
+2. فایل `migrations/0001_published_events.sql` در شاخهٔ فعلی بررسی شده و جدول `published_events` را می‌سازد. پس از بازبینی نهایی، migration را با `npx wrangler d1 migrations apply tusanbot --remote` روی D1 اعمال کنید؛ این دستور در این مرحله اجرا نشده است.
 3. در تنظیمات Worker مقدار `TELEGRAM_CHANNEL_ID` را روی `-1002951923149` قرار دهید و Secrets را تنظیم کنید: `BOT_TOKEN` و `SUPABASE_WEBHOOK_SECRET`.
 4. Worker را deploy کنید.
 5. در Supabase برای هر سه جدول یک Database Webhook از نوع INSERT بسازید و به `/webhooks/supabase` بفرستید؛ هدر `Authorization: Bearer <secret>` را تنظیم کنید.
